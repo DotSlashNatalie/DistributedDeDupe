@@ -13,7 +13,7 @@ However, all of these projects rely on the underlying file disk. I recently lost
 - Has to support any service (Google Drive and FTP being 2 targeted ones)
 - Has to be self healing - in other words if it detects there is an issue - it alerts or attempts to repair
 - There may be an agent but it MUST be usable agentless (many pieces of software require many components requiring hours of configuration)
-- Has to be fast (that being said - obviously if data is stored externally your bandwidth will be the bottleneck)
+- Has to be fast (that being said - obviously if data is stored externally your bandwidth and external resource will be the bottleneck)
 - Data will be encrypted at rest
 - Any new version can be automatically upgraded without manual intervention
 
@@ -29,17 +29,7 @@ I will use SQLite for the database backend - but file data will be stored on rem
 
 After doing some research - it seems to be best to use fixed block size deduplication. I will design the system to be able to leverage variable sized blocks but I think that would require programming knowledge of file types (or as wikipedia defines it - "content-aware data deduplication"). The fixed size can be specified by the user but default to 128k blocks. Testing will need to be done if deduplication increases when we increase or decrease this value. I suspect the smaller the value the greater the deduplication but slower processing times.
 
-12/6:
-
-Unfortunately to keep a sane design the files and folders will need to be stored unencrypted. This is due to the design of AES and random IVs.
-
-If a user was requesting all the files in /folder1 - we would have to decrypt EVERY folder in the database to find a match. This is defeating the point of the database.
-
-It would be more scalable if we stored block data via flat files locally (similar to encfs) but I think encfs would have the same scaling issue (it would also depend on the file system + access speeds as well).
-
-Maybe some day I'll think of a solution to this....
-
-wow - ok just encrypt the SQLite database - 
+Just encrypt the SQLite database - 
 
 There is a DeleteOnClose option - which would work perfectly
 
@@ -60,11 +50,9 @@ However, we can minimize the potential security risks by putting the file in /tm
 
 If malware gets root permission - then yes it would be able to read it but protecting against that is outside of the context of this application.
 
- 
-
 # Theory
 
-We will store SHA-256 then perform a byte-by-byte comparison.
+We will store Jenkins hash, then a SHA-512 of the block. And use those to determine if a duplicate block has been detected.
 
 # License
 
@@ -74,8 +62,10 @@ The license, unless otherwise stated in a file, is under an MIT license.
 
 - Google.Apis.Drive.v3
 - [https://github.com/bobvanderlinden/sharpfilesystem](sharpfilesystem)
+- System.Data.SQLite
 
 # Similar projects
 
 - [https://linux.die.net/man/1/fdupes](fdupes)
 - [https://github.com/vgough/encfs](encfs)
+- [http://peterodding.com/code/python/dedupfs/](dedupefs)
