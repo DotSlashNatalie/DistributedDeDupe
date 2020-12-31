@@ -8,6 +8,20 @@
 
     <ItemGroup>
       <PackageReference Include="Google.Apis.Drive.v3" Version="1.49.0.2145" />
+      <PackageReference Include="SharpFileSystem" Version="1.0.0.37" />
+      <PackageReference Include="System.Data.SQLite" Version="1.0.113.6" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Update="migrations\sqlite\1.sql">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </None>
+      <None Update="migrations\sqlite\2.sql">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </None>
+      <None Update="migrations\sqlite\3.sql">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </None>
     </ItemGroup>
 
 </Project>
