@@ -28,13 +28,12 @@ namespace DistributedDeDupe
             if (System.IO.File.Exists(encFile))
                 AESWrapper.DecryptFileToFile(encFile, Path, key);
         }
-        
 
-        protected override void Dispose(bool disposing)
+        public void Flush()
         {
             AESWrapper.EncryptFileToFile(Path, _encfile, _key);
-            base.Dispose(disposing);
-            
         }
+        
+        
     }
 }

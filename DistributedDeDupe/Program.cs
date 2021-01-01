@@ -252,6 +252,7 @@ namespace DistributedDeDupe
                             break;
                     }
                 } while (input != "exit" && input != "quit");
+                dbfile.Flush();
             }
         }
     }
