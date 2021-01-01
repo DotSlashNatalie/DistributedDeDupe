@@ -124,7 +124,7 @@ namespace DistributedDeDupe
             using (EncryptedTempFile dbfile = new EncryptedTempFile("data.sqlite.enc", key))
             {
                 GDriveFileSystem gdrive = new GDriveFileSystem(Scopes, "DistrubtedDeDupe", dbfile.Path);
-
+                Log.Instance.Write("log.txt");
 
                 
                 DeDupeFileSystem fs = new DeDupeFileSystem(dbfile.Path, key);

@@ -274,6 +274,7 @@ namespace DistributedDeDupe
             {
                 {"@migration", "migration"}
             }));
+            Log.Instance.Add($"lastMigration = {lastMigration}");
             if (files.Length > 0)
             {
                 int highestMigration = lastMigration;
@@ -284,14 +285,16 @@ namespace DistributedDeDupe
                     {
                         db.ExecuteNonQuery(System.IO.File.ReadAllText( Directory.GetCurrentDirectory() + $"/migrations/sqlite/{migrationNumber}.sql"));
                         highestMigration = migrationNumber;
+                        Log.Instance.Add($"highestMigration = {highestMigration}");
                     }
                 }
 
                 //db.ExecuteNonQuery($"UPDATE settings set key = '{highestMigration}' WHERE value = 'migration'");
+                Log.Instance.Add($"key = {highestMigration}");
                 db.ExecuteNonQuery("UPDATE settings set key = @highestMigration WHERE value = @migration",
                 new Dictionary<string, object>()
                 {
-                    {"@highestMigration", highestMigration.ToString()},
+                    {"@highestMigration", highestMigration},
                     {"@migration", "migration"}
                 });
                 
