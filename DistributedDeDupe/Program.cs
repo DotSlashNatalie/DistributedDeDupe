@@ -47,6 +47,7 @@ namespace DistributedDeDupe
         public void ShowHelp()
         {
             Console.WriteLine("DistributedDeDupe - program to deduplicate and encrypt files in cloud storage");
+            Console.WriteLine("Version: 0.1b");
             Console.WriteLine("Commands:");
             Console.WriteLine("ls - directory listing");
             Console.WriteLine("ll - long directory listing (includes hash)");
@@ -61,7 +62,6 @@ namespace DistributedDeDupe
             Console.WriteLine("This is really just for testing or an initial setup");
             Console.WriteLine("*WARNING*");
             Console.WriteLine("put [file] - puts a file into the remote storage(s)");
-            Console.WriteLine("get [remote file] [local file] - gets a file, block by block, from the remote storage and places it in local file");
             Console.WriteLine("get [remote file] [local file] - gets a file, block by block, from the remote storage and places it in local file");
             Console.WriteLine("localcat [file] - attempts to decrypt a file with the key in memory and output to console");
             Console.WriteLine("remotecat [file] - downloads a remote file and attempts to decrypt a file with the key in memory and output to console");
@@ -120,11 +120,11 @@ namespace DistributedDeDupe
 
             using (EncryptedTempFile dbfile = new EncryptedTempFile("data.sqlite.enc", key))
             {
-                GDriveFileSystem gdrive = new GDriveFileSystem(Scopes, "DistrubtedDeDupe", "gdrive.sqlite");
+                GDriveFileSystem gdrive = new GDriveFileSystem(Scopes, "DistrubtedDeDupe", dbfile.Path);
 
 
                 
-                DeDupeFileSystem fs = new DeDupeFileSystem("gdrive.sqlite", key);
+                DeDupeFileSystem fs = new DeDupeFileSystem(dbfile.Path, key);
                 fs.AddFileSystem(gdrive);
                 string fileName;
                 byte[] fileData;

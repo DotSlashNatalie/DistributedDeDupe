@@ -258,7 +258,7 @@ namespace DistributedDeDupe
                 {"@value", "1.0"}
             });
             //db.ExecuteNonQuery("INSERT INTO settings (`key`, `value`) VALUES ('migration', '1')");
-            db.ExecuteNonQuery("INSERT INTO settings (`key`, `value`) VALUES @setting, @value)",new Dictionary<string, object>()
+            db.ExecuteNonQuery("INSERT INTO settings (`key`, `value`) VALUES (@setting, @value)",new Dictionary<string, object>()
             {
                 {"@setting", "migration"},
                 {"@value", "1"}

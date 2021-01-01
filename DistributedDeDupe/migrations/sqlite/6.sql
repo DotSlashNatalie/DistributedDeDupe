@@ -7,4 +7,4 @@ create table directories
 	fullpath text
 );
 
-INSERT INTO directories(id, dirname, fullpath) VALUES (1, '/', null);
+INSERT INTO directories(id, dirname, fullpath) VALUES (1, '/', '/');
