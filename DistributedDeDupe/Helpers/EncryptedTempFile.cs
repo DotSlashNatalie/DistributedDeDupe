@@ -25,7 +25,8 @@ namespace DistributedDeDupe
         {
             _encfile = encFile;
             this._key = Convert.FromBase64String(key);
-            AESWrapper.DecryptFileToFile(encFile, Path, key);
+            if (System.IO.File.Exists(encFile))
+                AESWrapper.DecryptFileToFile(encFile, Path, key);
         }
         
 

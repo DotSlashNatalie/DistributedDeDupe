@@ -2,6 +2,29 @@
 
 This is a program that is used to distribute data across multiple storage systems.
 
+# Install
+
+Currently this works with google drive.
+
+You will need to create an application with Google APIs to use this.
+
+- Navigate to https://console.developers.google.com/
+- Create new project
+- Enable the google drive API (from member I think if you goto library on the left hand side, search for google drive, and enable)
+- Go to credentials tab
+- Click + Create Credentials
+- Click OAuth client ID
+- You can name it whatever you want
+- Click on download JSON at the top
+- Rename or save as  credentials.json
+- Place in the same folder as the binary
+- When you run the program for the first time it may spawn a web browser for you to login
+- After you login it should prompt you for an auth key and it will tell you what to do with it
+- After that it should prompt you for a key and place you into a CLI shell
+- type `help` and you can take it from there
+
+* The reason for these steps is that accessing google drive API is quota limited. I would rather not to have to worry about hitting a quota on my account.
+
 # Motivation
 
 This idea was actually in the back of my brain for several years. The original idea consisted of creating a deduplicating FUSE file system. In theory this is a great idea and has been done by many other people. Peter Odding created [http://peterodding.com/code/python/dedupfs/](such a system) in Python. There are some file systems that have it built in - [https://constantin.glez.de/2011/07/27/zfs-to-dedupe-or-not-dedupe/](such as ZFS). The problem with ZFS is that the deduplication doesn't scale - per the article you need 20GB of RAM per TB of data. If I have 6TB - I need 120GB of RAM. As a home user I simply do not have that hardware.
