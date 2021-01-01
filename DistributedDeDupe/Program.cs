@@ -114,6 +114,7 @@ namespace DistributedDeDupe
             {
                 Console.WriteLine("Can't find settings.xml file - attempting to generate one");
                 data = GenerateSettings();
+                SettingsFile.Write(data, "settings.xml");
             }
 
             string[] Scopes = { DriveService.Scope.Drive,DriveService.Scope.DriveFile };
