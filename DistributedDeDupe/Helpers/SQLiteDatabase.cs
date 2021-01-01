@@ -4,9 +4,10 @@ using System.Data;
 using System.Data.SQLite;
 
 // Src: https://brennydoogles.wordpress.com/2010/02/26/using-sqlite-with-csharp/
-public class SQLiteDatabase
+public class SQLiteDatabase : IDisposable
 {
     String dbConnection;
+    private SQLiteConnection _conn;
 
     /// <summary>
     ///     Default Constructor for SQLiteDatabase Class.
@@ -40,6 +41,12 @@ public class SQLiteDatabase
         dbConnection = str;
     }
 
+    protected void Connect()
+    {
+        _conn = new SQLiteConnection(dbConnection);
+        _conn.Open();
+    }
+
     /// <summary>
     ///     Allows the programmer to run a query against the Database.
     /// </summary>
@@ -67,6 +74,9 @@ public class SQLiteDatabase
             dt.Load(reader);
             reader.Close();
             cnn.Close();
+            // Src: https://stackoverflow.com/questions/12532729/sqlite-keeps-the-database-locked-even-after-the-connection-is-closed
+            // Src: http://system.data.sqlite.org/index.html/tktview/6434e23a0f63b440?plaintext
+            SQLiteConnection.ClearAllPools();
         }
         catch (Exception e)
         {
@@ -95,6 +105,9 @@ public class SQLiteDatabase
         mycommand.CommandText = sql;
         int rowsUpdated = mycommand.ExecuteNonQuery();
         cnn.Close();
+        // Src: https://stackoverflow.com/questions/12532729/sqlite-keeps-the-database-locked-even-after-the-connection-is-closed
+        // Src: http://system.data.sqlite.org/index.html/tktview/6434e23a0f63b440?plaintext
+        SQLiteConnection.ClearAllPools();
         return rowsUpdated;
     }
 
@@ -118,6 +131,9 @@ public class SQLiteDatabase
         mycommand.CommandText = sql;
         object value = mycommand.ExecuteScalar();
         cnn.Close();
+        // Src: https://stackoverflow.com/questions/12532729/sqlite-keeps-the-database-locked-even-after-the-connection-is-closed
+        // Src: http://system.data.sqlite.org/index.html/tktview/6434e23a0f63b440?plaintext
+        SQLiteConnection.ClearAllPools();
         if (value != null)
         {
             return value.ToString();
@@ -244,5 +260,10 @@ public class SQLiteDatabase
         {
             return false;
         }
+    }
+
+    public void Dispose()
+    {
+        
     }
 }
