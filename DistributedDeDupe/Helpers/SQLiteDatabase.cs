@@ -57,26 +57,34 @@ public class SQLiteDatabase : IDisposable
         DataTable dt = new DataTable();
         try
         {
-            SQLiteConnection cnn = new SQLiteConnection(dbConnection);
-            cnn.Open();
-            SQLiteCommand mycommand = new SQLiteCommand(cnn);
-            if (parameters != null)
+            using (SQLiteConnection cnn = new SQLiteConnection(dbConnection))
             {
-                foreach (KeyValuePair<string, object> param in parameters)
+                cnn.Open();
+                using (SQLiteCommand mycommand = new SQLiteCommand(cnn))
                 {
-                    mycommand.Parameters.Add(new SQLiteParameter(param.Key, param.Value));
+                    if (parameters != null)
+                    {
+                        foreach (KeyValuePair<string, object> param in parameters)
+                        {
+                            mycommand.Parameters.Add(new SQLiteParameter(param.Key, param.Value));
+                        }
+                    }
+
+                    mycommand.CommandText = sql;
+                    using (SQLiteDataReader reader = mycommand.ExecuteReader())
+                    {
+
+                        dt.Load(reader);
+
+                        reader.Close();
+                    }
                 }
+
+                cnn.Close();
+                // Src: https://stackoverflow.com/questions/12532729/sqlite-keeps-the-database-locked-even-after-the-connection-is-closed
+                // Src: http://system.data.sqlite.org/index.html/tktview/6434e23a0f63b440?plaintext
+                //SQLiteConnection.ClearAllPools();
             }
-
-            mycommand.CommandText = sql;
-            SQLiteDataReader reader = mycommand.ExecuteReader();
-
-            dt.Load(reader);
-            reader.Close();
-            cnn.Close();
-            // Src: https://stackoverflow.com/questions/12532729/sqlite-keeps-the-database-locked-even-after-the-connection-is-closed
-            // Src: http://system.data.sqlite.org/index.html/tktview/6434e23a0f63b440?plaintext
-            SQLiteConnection.ClearAllPools();
         }
         catch (Exception e)
         {
@@ -92,22 +100,30 @@ public class SQLiteDatabase : IDisposable
     /// <returns>An Integer containing the number of rows updated.</returns>
     public int ExecuteNonQuery(string sql, Dictionary<string, object> parameters = null)
     {
-        SQLiteConnection cnn = new SQLiteConnection(dbConnection);
-        cnn.Open();
-        SQLiteCommand mycommand = new SQLiteCommand(cnn);
-        if (parameters != null)
+        int rowsUpdated = -1;
+        using (SQLiteConnection cnn = new SQLiteConnection(dbConnection))
         {
-            foreach (KeyValuePair<string, object> param in parameters)
+            cnn.Open();
+            using (SQLiteCommand mycommand = new SQLiteCommand(cnn))
             {
-                mycommand.Parameters.Add(new SQLiteParameter(param.Key, param.Value));
+                if (parameters != null)
+                {
+                    foreach (KeyValuePair<string, object> param in parameters)
+                    {
+                        mycommand.Parameters.Add(new SQLiteParameter(param.Key, param.Value));
+                    }
+                }
+
+                mycommand.CommandText = sql;
+                rowsUpdated = mycommand.ExecuteNonQuery();
             }
+
+            cnn.Close();
+            // Src: https://stackoverflow.com/questions/12532729/sqlite-keeps-the-database-locked-even-after-the-connection-is-closed
+            // Src: http://system.data.sqlite.org/index.html/tktview/6434e23a0f63b440?plaintext
+            //SQLiteConnection.ClearAllPools();
         }
-        mycommand.CommandText = sql;
-        int rowsUpdated = mycommand.ExecuteNonQuery();
-        cnn.Close();
-        // Src: https://stackoverflow.com/questions/12532729/sqlite-keeps-the-database-locked-even-after-the-connection-is-closed
-        // Src: http://system.data.sqlite.org/index.html/tktview/6434e23a0f63b440?plaintext
-        SQLiteConnection.ClearAllPools();
+
         return rowsUpdated;
     }
 
@@ -118,26 +134,35 @@ public class SQLiteDatabase : IDisposable
     /// <returns>A string.</returns>
     public string ExecuteScalar(string sql, Dictionary<string, object> parameters = null)
     {
-        SQLiteConnection cnn = new SQLiteConnection(dbConnection);
-        cnn.Open();
-        SQLiteCommand mycommand = new SQLiteCommand(cnn);
-        if (parameters != null)
+        object value;
+        using (SQLiteConnection cnn = new SQLiteConnection(dbConnection))
         {
-            foreach (KeyValuePair<string, object> param in parameters)
+            cnn.Open();
+            using (SQLiteCommand mycommand = new SQLiteCommand(cnn))
             {
-                mycommand.Parameters.Add(new SQLiteParameter(param.Key, param.Value));
+                if (parameters != null)
+                {
+                    foreach (KeyValuePair<string, object> param in parameters)
+                    {
+                        mycommand.Parameters.Add(new SQLiteParameter(param.Key, param.Value));
+                    }
+                }
+
+                mycommand.CommandText = sql;
+                value = mycommand.ExecuteScalar();
+            }
+
+            cnn.Close();
+
+            // Src: https://stackoverflow.com/questions/12532729/sqlite-keeps-the-database-locked-even-after-the-connection-is-closed
+            // Src: http://system.data.sqlite.org/index.html/tktview/6434e23a0f63b440?plaintext
+            SQLiteConnection.ClearAllPools();
+            if (value != null)
+            {
+                return value.ToString();
             }
         }
-        mycommand.CommandText = sql;
-        object value = mycommand.ExecuteScalar();
-        cnn.Close();
-        // Src: https://stackoverflow.com/questions/12532729/sqlite-keeps-the-database-locked-even-after-the-connection-is-closed
-        // Src: http://system.data.sqlite.org/index.html/tktview/6434e23a0f63b440?plaintext
-        SQLiteConnection.ClearAllPools();
-        if (value != null)
-        {
-            return value.ToString();
-        }
+
         return "";
     }
 
