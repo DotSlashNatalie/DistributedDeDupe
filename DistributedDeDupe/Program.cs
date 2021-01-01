@@ -142,8 +142,8 @@ namespace DistributedDeDupe
                     {
                         case "decryptdb":
                             fileName = input.Split(" ")[1].Trim();
-                            byte[] plain = AESWrapper.DecryptToByte(System.IO.File.ReadAllBytes(dbfile.Path), key);
-                            System.IO.File.WriteAllBytes(fileName, plain);
+                            //byte[] plain = AESWrapper.DecryptToByte(System.IO.File.ReadAllBytes(dbfile.Path), key);
+                            System.IO.File.WriteAllBytes(fileName, System.IO.File.ReadAllBytes(dbfile.Path));
                             break;
                         case "help":
                             ShowHelp();
