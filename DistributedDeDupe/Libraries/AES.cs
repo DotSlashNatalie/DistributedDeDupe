@@ -144,7 +144,11 @@ namespace DistributedDeDupe
 
         public static void EncryptFileToFile(string srcFile, string dstFile, byte[] key)
         {
-            byte[] srcFileData = System.IO.File.ReadAllBytes(srcFile);
+            byte[] srcFileData; //= System.IO.File.ReadAllBytes(srcFile);
+            using (FileStream fs = new FileStream(srcFile, FileMode.Open, FileAccess.ReadWrite))
+            {
+                srcFileData = fs.ReadAllBytes();
+            }
             byte[] enc = EncryptToByte(srcFileData, key);
             System.IO.File.WriteAllBytes(dstFile, enc);
             
