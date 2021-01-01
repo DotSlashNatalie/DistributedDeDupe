@@ -69,7 +69,8 @@ namespace DistributedDeDupe
         }
         public SettingsData GenerateSettings()
         {
-            SettingsData data = SettingsFile.Read("settings.xml");
+            //SettingsData data = SettingsFile.Read("settings.xml");
+            SettingsData data;
             if (File.Exists("settings.xml"))
             {
                 Console.Write("settings.xml file detected - are you sure you want to overwrite [y]/n? ");
@@ -78,6 +79,7 @@ namespace DistributedDeDupe
                 {
                     return null;
                 }
+                data = SettingsFile.Read("settings.xml");
             }
             Console.Write("How many iterations do you want when generating the key [10000] ? ");
             string resp = Console.ReadLine();
