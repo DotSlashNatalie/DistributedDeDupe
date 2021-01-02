@@ -281,6 +281,7 @@ namespace DistributedDeDupe
                 foreach (string file in files)
                 {
                     int migrationNumber = Int32.Parse(file.Split('.')[0]);
+                    Log.Instance.Add($"migrationNumber = {migrationNumber}");
                     if (migrationNumber > lastMigration)
                     {
                         db.ExecuteNonQuery(System.IO.File.ReadAllText( Directory.GetCurrentDirectory() + $"/migrations/sqlite/{migrationNumber}.sql"));
@@ -291,7 +292,7 @@ namespace DistributedDeDupe
 
                 //db.ExecuteNonQuery($"UPDATE settings set key = '{highestMigration}' WHERE value = 'migration'");
                 Log.Instance.Add($"key = {highestMigration}");
-                db.ExecuteNonQuery("UPDATE settings set key = @highestMigration WHERE value = @migration",
+                db.ExecuteNonQuery("UPDATE settings set value = @highestMigration WHERE key = @migration",
                 new Dictionary<string, object>()
                 {
                     {"@highestMigration", highestMigration},
