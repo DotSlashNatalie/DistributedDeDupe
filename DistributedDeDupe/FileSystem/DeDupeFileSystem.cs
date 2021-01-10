@@ -149,8 +149,7 @@ namespace DistributedDeDupe
         {
             tmpfile = new DeDupeTempFile(_fileSystems["GDRIVE"], path, db, key);
             tmpfile.Download();
-            return new FileStream(tmpfile.Path, FileMode.Open, FileAccess.Read); 
-            throw new System.NotImplementedException();
+            return new FileStream(tmpfile.Path, FileMode.Open, FileAccess.Read);
         }
 
         public void CreateDirectory(FileSystemPath path)

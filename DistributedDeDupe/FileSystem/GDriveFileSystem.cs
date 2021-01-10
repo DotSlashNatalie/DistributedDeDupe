@@ -11,6 +11,7 @@ using SharpFileSystem;
 using System.Text;
 using System.Data.SQLite;
 using System.Linq;
+using Google.Apis.Upload;
 using SharpFileSystem.IO;
 using Directory = System.IO.Directory;
 using File = Google.Apis.Drive.v3.Data.File;
@@ -23,6 +24,7 @@ namespace DistributedDeDupe
         protected string fileName;
         protected string mimeType;
         protected SQLiteDatabase db;
+        protected double sizeOfUplaod;
         public GDriveFileStream(string fileName, string mimeType, DriveService svc, SQLiteDatabase db)
         {
             this.fileName = fileName;
@@ -111,11 +113,14 @@ namespace DistributedDeDupe
                     if (file.Id == fileId)
                     {
                         // I guess we need to create another file object?
-                        File uploadFile = new File();
+                        /*File uploadFile = new File();
                         uploadFile.Name = fileName;
                         uploadFile.MimeType = mimeType;
                         var res = svc.Files.Update(uploadFile, fileId, this, mimeType);
-                        var req = res.Upload();
+                        var req = res.Upload();*/
+                        GDriveFile f = new GDriveFile(this, fileName, mimeType, directoryID, db, GDriveFile.Operation.NONE,
+                            false);
+                        f.Update(svc, fileId);
                         foundFile = true;
                         break;
                     }
@@ -124,7 +129,10 @@ namespace DistributedDeDupe
 
                 if (!foundFile)
                 {
-                    File body = new File();
+                    GDriveFile f = new GDriveFile(this, fileName, mimeType, directoryID, db, GDriveFile.Operation.UPDATE,
+                        false);
+                    f.Upload(svc);
+                    /*File body = new File();
                     body.Name = fileName;
                     body.MimeType = mimeType;
                     body.Parents = new List<string>();
@@ -143,21 +151,27 @@ namespace DistributedDeDupe
                         {
                             {"@newFileId", newFileId},
                             {"@fileName", fileName}
-                        });
+                        });*/
                 }
                 
                 
             }
             else
             {
-                File body = new File();
+                GDriveFile f = new GDriveFile(this, fileName, mimeType, directoryID, db, GDriveFile.Operation.CREATE,
+                    false);
+                f.Upload(svc);
+                /*File body = new File();
                 body.Name = fileName;
                 body.MimeType = mimeType;
                 body.Parents = new List<string>();
                 body.Parents.Add(directoryID);
                 FilesResource.CreateMediaUpload req = svc.Files.Create(body, this, mimeType);
                 req.Fields = "id, parents";
+                req.ProgressChanged += ReqOnProgressChanged;
+                //req.UploadAsync()
                 var res = req.Upload();
+                
                 string newFileId = req.ResponseBody.Id;
 
                 //db.ExecuteNonQuery(
@@ -168,7 +182,7 @@ namespace DistributedDeDupe
                     {
                         {"@fileName", fileName},
                         {"@newFileID", newFileId}
-                    });
+                    });*/
             }
         }
 

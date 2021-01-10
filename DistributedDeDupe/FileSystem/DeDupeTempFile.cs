@@ -48,42 +48,51 @@ public class DeDupeTempFile : TempFile
         {
             {"@fileid", fileInfo.Rows[0]["id"]}
         });
-        foreach (DataRow r in blocks.Rows)
+        using (ProgressBar pb = new ProgressBar())
         {
-            string remotename = db.ExecuteScalar("SELECT name FROM blocks where id = @blockID",
-                new Dictionary<string, object>()
-                {
-                    {"@blockID", r["block_id"]}
-                });
-            remotename = "/" + remotename;
-            remotename = remotename.Replace("//", "/");
-            using (Stream s = fsdst.OpenFile(FileSystemPath.Parse(remotename), FileAccess.Read))
+            Int64 rowCount = 0;
+            foreach (DataRow r in blocks.Rows)
             {
-                using (FileStream f = System.IO.File.Open(this.Path, FileMode.Append, FileAccess.Write))
+                pb.Report((((double)rowCount)/blocks.Rows.Count));
+                rowCount += 1;
+                string remotename = db.ExecuteScalar("SELECT name FROM blocks where id = @blockID",
+                    new Dictionary<string, object>()
+                    {
+                        {"@blockID", r["block_id"]}
+                    });
+                remotename = "/" + remotename;
+                remotename = remotename.Replace("//", "/");
+                using (Stream s = fsdst.OpenFile(FileSystemPath.Parse(remotename), FileAccess.Read))
                 {
-                    byte[] buffer = s.ReadAllBytes();
-                    byte[] plainText = AESWrapper.DecryptToByte(buffer, key);
-                    if (plainText == null)
+                    using (FileStream f = System.IO.File.Open(this.Path, FileMode.Append, FileAccess.Write))
                     {
-                        throw new Exception("[Error]: Could not decrypt file");
-                    }
-                    string fileHash = fileInfo.Rows[0]["filehash"].ToString(); 
-                    if (fileHash != "")
-                    {
-                        using (SHA256 sha256 = SHA256.Create())
+                        byte[] buffer = s.ReadAllBytes();
+                        byte[] plainText = AESWrapper.DecryptToByte(buffer, key);
+                        if (plainText == null)
                         {
-                            string newHash = plainText.GetSHA512(0, plainText.Length);
-                            if (fileHash != newHash)
-                            {
-                                Console.WriteLine("[Warning]: File hashs do not match - data corruption possible!");
-                            }
+                            throw new Exception("[Error]: Could not decrypt file");
                         }
+
+                        f.Write(plainText);
                     }
-                    f.Write(plainText);
+                }
+            }
+            string fileHash = fileInfo.Rows[0]["filehash"].ToString();
+            if (fileHash != "")
+            {
+
+                string newHash = "";
+                using (FileStream fs = System.IO.File.Open(this.Path, FileMode.Open, FileAccess.Read))
+                {
+                    newHash = fs.GetSHA512();
+                }
+                if (fileHash != newHash)
+                {
+                    Console.WriteLine("[Warning]: File hashs do not match - data corruption possible!");
                 }
             }
         }
-        
+
     }
 
     public void Flush()
@@ -141,100 +150,106 @@ public class DeDupeTempFile : TempFile
         fileId = fileInfo.Rows[0]["id"].ToString();
         using (FileStream f = System.IO.File.Open(this.Path, FileMode.Open, FileAccess.Read))
         {
-            while ((bytesRead = f.Read(buffer, 0, buffer.Length)) > 0)
+            Int64 lenthOfFile = f.Length;
+            Int64 totalRead = 0;
+            using (ProgressBar pb = new ProgressBar())
             {
-                
-                string hash1 = buffer.JenkinsOneAtATime();
-                string id = "";
-                string hash2 = "";
-                string hash2Check = "";
-                string hash1Check = db.ExecuteScalar("SELECT id FROM blocks WHERE hash1 = @hash1",
-                    new Dictionary<string, object>()
-                    {
-                        {"@hash1", hash1}
-                    });
-                /*using (SHA256 sha256 = SHA256.Create())
+                while ((bytesRead = f.Read(buffer, 0, buffer.Length)) > 0)
                 {
-                    byte[] hash = sha256.ComputeHash(buffer, 0, bytesRead);
-                    hash2 = Convert.ToHexString(hash).ToLower();
-                }*/
-
-                hash2 = buffer.GetSHA512(0, bytesRead);
-                if (hash1Check != "")
-                {
-                    
-                    
-                    hash2Check = db.ExecuteScalar("SELECT id FROM blocks WHERE hash2 = @hash2 and hash1 = @hash1",
+                    pb.Report((((double)totalRead)/lenthOfFile));
+                    totalRead = totalRead + bytesRead;
+                    string hash1 = buffer.JenkinsOneAtATime();
+                    string id = "";
+                    string hash2 = "";
+                    string hash2Check = "";
+                    string hash1Check = db.ExecuteScalar("SELECT id FROM blocks WHERE hash1 = @hash1",
                         new Dictionary<string, object>()
                         {
-                            {"@hash2", hash2},
                             {"@hash1", hash1}
                         });
-                    id = hash2Check;
-                }
-
-                if (id == "")
-                {
-                    // need to create block
-                    Guid g = Guid.NewGuid();
-                    string name = g.ToString();
-                    string encName = AESWrapper.EncryptToString(name, key);
-                    encName = encName.Replace("/", "\\/");
-                    encName = "/" + encName;
-                    encName = encName.Replace("//", "/");
-                    
-                    /*byte[] compressed;
-                    using (System.IO.MemoryStream instream = new MemoryStream(buffer))
+                    /*using (SHA256 sha256 = SHA256.Create())
                     {
-                        using (System.IO.MemoryStream outstream = new MemoryStream())
-                        {
-                            using (GZipStream s = new GZipStream(outstream, CompressionMode.Compress))
-                            {
-                                instream.CopyTo(s);
-                            }
-
-                            compressed = outstream.ToArray();
-                        }
+                        byte[] hash = sha256.ComputeHash(buffer, 0, bytesRead);
+                        hash2 = Convert.ToHexString(hash).ToLower();
                     }*/
-                    
-                    using (Stream s = fsdst.CreateFile(FileSystemPath.Parse($"{encName}")))
+
+                    hash2 = buffer.GetSHA512(0, bytesRead);
+                    if (hash1Check != "")
                     {
-                        byte[] cipher = AESWrapper.EncryptToByte(buffer, key, 0, bytesRead);
-                        s.Write(cipher);
+
+
+                        hash2Check = db.ExecuteScalar("SELECT id FROM blocks WHERE hash2 = @hash2 and hash1 = @hash1",
+                            new Dictionary<string, object>()
+                            {
+                                {"@hash2", hash2},
+                                {"@hash1", hash1}
+                            });
+                        id = hash2Check;
                     }
 
-                    string blockInsertSQL =
-                        "INSERT INTO blocks (hash1, size, name, location, hash2) VALUES (@hash1, @size, @name, @location, @hash2)";
-
-                    db.ExecuteNonQuery(blockInsertSQL, new Dictionary<string, object>()
+                    if (id == "")
                     {
-                        {"@hash1", hash1},
-                        {"@size", bytesRead},
-                        {"@name", encName},
-                        {"@location", fsdst.ToString()},
-                        {"@hash2", hash2}
-                    });
-                    
-                    hash2Check = db.ExecuteScalar("SELECT id FROM blocks WHERE hash2 = @hash2 and hash1 = @hash1",
-                        new Dictionary<string, object>()
+                        // need to create block
+                        Guid g = Guid.NewGuid();
+                        string name = g.ToString();
+                        string encName = AESWrapper.EncryptToString(name, key);
+                        encName = encName.Replace("/", "\\/");
+                        encName = "/" + encName;
+                        encName = encName.Replace("//", "/");
+
+                        /*byte[] compressed;
+                        using (System.IO.MemoryStream instream = new MemoryStream(buffer))
                         {
-                            {"@hash2", hash2},
-                            {"@hash1", hash1}
+                            using (System.IO.MemoryStream outstream = new MemoryStream())
+                            {
+                                using (GZipStream s = new GZipStream(outstream, CompressionMode.Compress))
+                                {
+                                    instream.CopyTo(s);
+                                }
+    
+                                compressed = outstream.ToArray();
+                            }
+                        }*/
+
+                        using (Stream s = fsdst.CreateFile(FileSystemPath.Parse($"{encName}")))
+                        {
+                            byte[] cipher = AESWrapper.EncryptToByte(buffer, key, 0, bytesRead);
+                            s.Write(cipher);
+                        }
+
+                        string blockInsertSQL =
+                            "INSERT INTO blocks (hash1, size, name, location, hash2) VALUES (@hash1, @size, @name, @location, @hash2)";
+
+                        db.ExecuteNonQuery(blockInsertSQL, new Dictionary<string, object>()
+                        {
+                            {"@hash1", hash1},
+                            {"@size", bytesRead},
+                            {"@name", encName},
+                            {"@location", fsdst.ToString()},
+                            {"@hash2", hash2}
                         });
-                    id = hash2Check;
 
+                        hash2Check = db.ExecuteScalar("SELECT id FROM blocks WHERE hash2 = @hash2 and hash1 = @hash1",
+                            new Dictionary<string, object>()
+                            {
+                                {"@hash2", hash2},
+                                {"@hash1", hash1}
+                            });
+                        id = hash2Check;
+
+                    }
+
+                    string fileBlockInsertSQL =
+                        "INSERT INTO fileblocks (file_id, block_id, block_order) VALUES (@fileId, @blockId, @blockOrder)";
+                    db.ExecuteNonQuery(fileBlockInsertSQL, new Dictionary<string, object>()
+                    {
+                        {"@fileId", fileId},
+                        {"@blockId", id},
+                        {"@blockOrder", blockCount}
+                    });
+
+                    blockCount++;
                 }
-
-                string fileBlockInsertSQL =
-                    "INSERT INTO fileblocks (file_id, block_id, block_order) VALUES (@fileId, @blockId, @blockOrder)";
-                db.ExecuteNonQuery(fileBlockInsertSQL, new Dictionary<string, object>()
-                {
-                    {"@fileId", fileId},
-                    {"@blockId", id},
-                    {"@blockOrder", blockCount}
-                });
-
-                blockCount++;
             }
         }
     }
