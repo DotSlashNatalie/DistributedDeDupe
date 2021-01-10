@@ -27,7 +27,7 @@ You will need to create an application with Google APIs to use this.
 
 # Version
 
-As of this writing 0.1b - basically the first completely unstable beta version.
+As of this writing 0.2b - basically the first completely unstable beta version.
 
 *As a result the usual disclaimers:*
 

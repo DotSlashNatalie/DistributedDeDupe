@@ -47,7 +47,7 @@ namespace DistributedDeDupe
         public void ShowHelp()
         {
             Console.WriteLine("DistributedDeDupe - program to deduplicate and encrypt files in cloud storage");
-            Console.WriteLine("Version: 0.1b");
+            Console.WriteLine("Version: 0.2b");
             Console.WriteLine("Commands:");
             Console.WriteLine("ls - directory listing");
             Console.WriteLine("ll - long directory listing (includes hash)");
@@ -185,8 +185,8 @@ namespace DistributedDeDupe
                             {
                                 f.Write(fileDataPut, 0, fileDataPut.Length);
                             }
-
                             fs.FlushTempFile();
+                            dbfile.Flush();
                             break;
                         case "localcat":
                             fileName = input.Split(" ")[1].Trim();
@@ -224,6 +224,7 @@ namespace DistributedDeDupe
                         case "mkdir":
                             string newDir = input.Split(" ")[1].Trim();
                             fs.CreateDirectory(currentDirectory.AppendDirectory(newDir));
+                            dbfile.Flush();
                             break;
                         case "cd":
                             string dirtmpStr;
