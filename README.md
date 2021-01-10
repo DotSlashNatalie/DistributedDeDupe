@@ -2,6 +2,10 @@
 
 This is a program that is used to distribute data across multiple storage systems.
 
+# Demo
+
+![](media/distributeddedupe.gif)
+
 # Install
 
 Currently this works with google drive.
