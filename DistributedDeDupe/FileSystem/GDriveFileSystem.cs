@@ -11,6 +11,11 @@ using SharpFileSystem;
 using System.Text;
 using System.Data.SQLite;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Threading.Tasks;
+using Google.Apis.Download;
+using Google.Apis.Http;
 using Google.Apis.Upload;
 using SharpFileSystem.IO;
 using Directory = System.IO.Directory;
@@ -18,6 +23,7 @@ using File = Google.Apis.Drive.v3.Data.File;
 
 namespace DistributedDeDupe
 {
+
     public class GDriveFileStream : MemoryStream
     {
         protected DriveService svc;
@@ -25,6 +31,7 @@ namespace DistributedDeDupe
         protected string mimeType;
         protected SQLiteDatabase db;
         protected double sizeOfUplaod;
+        protected Task<IDownloadProgress> progress;
         public GDriveFileStream(string fileName, string mimeType, DriveService svc, SQLiteDatabase db)
         {
             this.fileName = fileName;
@@ -43,18 +50,64 @@ namespace DistributedDeDupe
                     });
             if (fileId != "")
             {
+                //var req2 = svc.Files.List();
+                //string fnameURLEncode = System.Web.HttpUtility.UrlEncode(fileName);
+                //req2.Q = $"id = '{fileId}'";
+                //req2.Fields = "nextPageToken, files(id, name,parents,mimeType, trashed)";
+                //var feed = req2.Execute();
                 var request = svc.Files.Get(fileId);
-                request.Download(this);
+                //request.Fields = "*";
+                //string fid = request.FileId;
+                //var t = request.RequestParameters;
+                var z = request.DownloadWithStatus(this);
+                int totalTries = 10;
+                int tries = 0;
+                if (Length == 0)
+                {
+                    while (Length == 0 && tries <= totalTries)
+                    {
+                        z = request.DownloadWithStatus(this);
+                        tries++;
+                    }
+
+                    if (Length == 0)
+                    {
+                        throw new Exception(z.ToString());
+                    }
+                }
+
                 this.Position = 0;
+                //this.Position = 0;
+                //var fileResp = request.Execute();
+                //this.Position = 0;
+
+
 
             }
         }
 
-        protected override void Dispose(bool disposing)
+        public bool IsDownloaded()
         {
-            base.Dispose(disposing);
-            this.Flush();
+            return progress.Result.Status == DownloadStatus.Completed;
         }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            /*if (progress != null)
+            {
+                while (progress.Result.Status != DownloadStatus.Completed)
+                {
+                    /*if (progress.Result.Status == DownloadStatus.Failed)
+                        throw new Exception("Failed downloading file from gdrive");
+
+                    if (progress.Result.Status == DownloadStatus.NotStarted)
+                        throw new Exception("Download not started?");
+                }
+                this.Position = 0;
+            }*/
+            return base.Read(buffer, offset, count);
+        }
+
 
         public override void Write(byte[] buffer, int offset, int count)
         {
@@ -118,8 +171,7 @@ namespace DistributedDeDupe
                         uploadFile.MimeType = mimeType;
                         var res = svc.Files.Update(uploadFile, fileId, this, mimeType);
                         var req = res.Upload();*/
-                        GDriveFile f = new GDriveFile(this, fileName, mimeType, directoryID, db, GDriveFile.Operation.NONE,
-                            false);
+                        GDriveFile f = new GDriveFile(this, fileName, mimeType, directoryID, db, GDriveFile.Operation.NONE);
                         f.Update(svc, fileId);
                         foundFile = true;
                         break;
@@ -129,8 +181,7 @@ namespace DistributedDeDupe
 
                 if (!foundFile)
                 {
-                    GDriveFile f = new GDriveFile(this, fileName, mimeType, directoryID, db, GDriveFile.Operation.UPDATE,
-                        false);
+                    GDriveFile f = new GDriveFile(this, fileName, mimeType, directoryID, db, GDriveFile.Operation.UPDATE);
                     f.Upload(svc);
                     /*File body = new File();
                     body.Name = fileName;
@@ -158,8 +209,7 @@ namespace DistributedDeDupe
             }
             else
             {
-                GDriveFile f = new GDriveFile(this, fileName, mimeType, directoryID, db, GDriveFile.Operation.CREATE,
-                    false);
+                GDriveFile f = new GDriveFile(this, fileName, mimeType, directoryID, db, GDriveFile.Operation.CREATE);
                 f.Upload(svc);
                 /*File body = new File();
                 body.Name = fileName;
@@ -248,73 +298,15 @@ namespace DistributedDeDupe
             service = new DriveService(new BaseClientService.Initializer()
             {
                 HttpClientInitializer = credential,
-                ApplicationName = ApplicationName,
+                ApplicationName = ApplicationName
+                
             });
             
             db = new SQLiteDatabase(dbFile);
-            var res = db.GetDataTable("PRAGMA table_info(settings)");
-            if (res.Rows.Count == 0)
-            {
-                this.setUpDatabase();
-            }
-            this.runMigrations();
+            
         }
 
-        private void setUpDatabase()
-        {
-            // Not that this matters - as input is not coming from externally....
-            // But I'm sure some junior cyber "expert" would bitch about it so....
-            db.ExecuteNonQuery(System.IO.File.ReadAllText( Directory.GetCurrentDirectory() + "/migrations/sqlite/1.sql"));
-            //db.ExecuteNonQuery("INSERT INTO settings (`key`, `value`) VALUES ('version', '1.0')");
-            db.ExecuteNonQuery("INSERT INTO settings (`key`, `value`) VALUES (@setting, @value)", new Dictionary<string, object>()
-            {
-                {"@setting", "version"},
-                {"@value", "1.0"}
-            });
-            //db.ExecuteNonQuery("INSERT INTO settings (`key`, `value`) VALUES ('migration', '1')");
-            db.ExecuteNonQuery("INSERT INTO settings (`key`, `value`) VALUES (@setting, @value)",new Dictionary<string, object>()
-            {
-                {"@setting", "migration"},
-                {"@value", "1"}
-            });
-        }
-
-        private void runMigrations()
-        {
-            string[] files = Directory.GetFiles(System.IO.Directory.GetCurrentDirectory() + "/migrations/sqlite/").Select(Path.GetFileName).ToArray();
-            files = files.OrderByNatural(file => file).ToArray();
-            //int lastMigration = Int32.Parse(db.ExecuteScalar("SELECT value FROM settings WHERE key = 'migration'"));
-            int lastMigration = Int32.Parse(db.ExecuteScalar("SELECT value FROM settings WHERE key = @migration", new Dictionary<string, object>()
-            {
-                {"@migration", "migration"}
-            }));
-            Log.Instance.Add($"lastMigration = {lastMigration}");
-            if (files.Length > 0)
-            {
-                int highestMigration = lastMigration;
-                foreach (string file in files)
-                {
-                    int migrationNumber = Int32.Parse(file.Split('.')[0]);
-                    Log.Instance.Add($"migrationNumber = {migrationNumber}");
-                    if (migrationNumber > lastMigration)
-                    {
-                        db.ExecuteNonQuery(System.IO.File.ReadAllText( Directory.GetCurrentDirectory() + $"/migrations/sqlite/{migrationNumber}.sql"));
-                        highestMigration = migrationNumber;
-                        Log.Instance.Add($"highestMigration = {highestMigration}");
-                    }
-                }
-
-                //db.ExecuteNonQuery($"UPDATE settings set key = '{highestMigration}' WHERE value = 'migration'");
-                Log.Instance.Add($"key = {highestMigration}");
-                db.ExecuteNonQuery("UPDATE settings set value = @highestMigration WHERE key = @migration",
-                new Dictionary<string, object>()
-                {
-                    {"@highestMigration", highestMigration},
-                    {"@migration", "migration"}
-                });
-                
-            }
-        }
+        
         
         public void Dispose()
         {
@@ -353,7 +345,8 @@ namespace DistributedDeDupe
 
         public Stream OpenFile(FileSystemPath path, string mime)
         {
-            return new GDriveFileStream(path.Path.TrimStart('/'), mime, service, db);
+            GDriveFileStream fs = new GDriveFileStream(path.Path.TrimStart('/'), mime, service, db);
+            return fs;
         }
 
         public void CreateDirectory(FileSystemPath path)

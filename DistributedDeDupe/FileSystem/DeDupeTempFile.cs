@@ -5,6 +5,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using DistributedDeDupe;
 using SharpFileSystem;
 using SharpFileSystem.IO;
@@ -13,14 +14,14 @@ using File = SharpFileSystem.File;
 
 public class DeDupeTempFile : TempFile
 {
-    protected IFileSystem fsdst;
+    protected List<IFileSystem> fsdst;
     protected FileSystemPath vsrc;
     protected SQLiteDatabase db;
     protected string key;
 
     // fsdst will be the dest file system - in this case google drive
     // vsrc will be the virtual file that we want to store - ie /test/test.txt
-    public DeDupeTempFile(IFileSystem fsdst, FileSystemPath vsrc, SQLiteDatabase db, string key)
+    public DeDupeTempFile(List<IFileSystem> fsdst, FileSystemPath vsrc, SQLiteDatabase db, string key)
     {
         this.fsdst = fsdst;
         this.vsrc = vsrc;
@@ -44,9 +45,43 @@ public class DeDupeTempFile : TempFile
                 {"@isdir", 0},
                 {"@dir", directoryID}
             });
-        DataTable blocks = db.GetDataTable("SELECT * FROM fileblocks WHERE file_id = @fileid order by block_order asc", new Dictionary<string, object>()
+        
+        // While we write the blocks to multiple -  
+        // We only need data from one file system -
+        // I want to test the file system to make sure it is working before attempting access
+        int fsToUse = 0;
+        bool continueSearch = false;
+        for (int i = 0; i < fsdst.Count; i++)
         {
-            {"@fileid", fileInfo.Rows[0]["id"]}
+            try
+            {
+                using (Stream s = fsdst[fsToUse].CreateFile(FileSystemPath.Parse("/test")))
+                {
+
+                }
+
+                continueSearch = false;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("[Error]: file system - " + fsdst[fsToUse].ToString() + " missing - trying a backup");
+                continueSearch = true;
+                fsToUse++;
+            }
+
+            if (!continueSearch)
+                break;
+        }
+        
+        DataTable blocks = db.GetDataTable(@"SELECT * FROM fileblocks 
+        inner join blocks on blocks.id = fileblocks.block_id
+        WHERE file_id = @fileid 
+        and blocks.location = @location
+        order by block_order asc"
+            , new Dictionary<string, object>()
+        {
+            {"@fileid", fileInfo.Rows[0]["id"]},
+            {"@location", fsdst[fsToUse].ToString()}
         });
         using (ProgressBar pb = new ProgressBar())
         {
@@ -55,15 +90,23 @@ public class DeDupeTempFile : TempFile
             {
                 pb.Report((((double)rowCount)/blocks.Rows.Count));
                 rowCount += 1;
-                string remotename = db.ExecuteScalar("SELECT name FROM blocks where id = @blockID",
+                
+                
+                
+                /*string remotename = db.ExecuteScalar("SELECT name FROM blocks where id = @blockID and location = @name",
                     new Dictionary<string, object>()
                     {
-                        {"@blockID", r["block_id"]}
-                    });
+                        {"@blockID", r["block_id"]},
+                        {"@name", fsdst[fsToUse].ToString()}
+                    });*/
+                string remotename = r["name"].ToString();
                 remotename = "/" + remotename;
                 remotename = remotename.Replace("//", "/");
-                using (Stream s = fsdst.OpenFile(FileSystemPath.Parse(remotename), FileAccess.Read))
+                
+
+                using (Stream s = fsdst[fsToUse].OpenFile(FileSystemPath.Parse(remotename), FileAccess.Read))
                 {
+                    
                     using (FileStream f = System.IO.File.Open(this.Path, FileMode.Append, FileAccess.Write))
                     {
                         byte[] buffer = s.ReadAllBytes();
@@ -193,9 +236,9 @@ public class DeDupeTempFile : TempFile
                         Guid g = Guid.NewGuid();
                         string name = g.ToString();
                         string encName = AESWrapper.EncryptToString(name, key);
-                        encName = encName.Replace("/", "\\/");
+                        encName = encName.Replace("/", "_");
                         encName = "/" + encName;
-                        encName = encName.Replace("//", "/");
+                        encName = encName.Replace("//", "__");
 
                         /*byte[] compressed;
                         using (System.IO.MemoryStream instream = new MemoryStream(buffer))
@@ -211,42 +254,49 @@ public class DeDupeTempFile : TempFile
                             }
                         }*/
 
-                        using (Stream s = fsdst.CreateFile(FileSystemPath.Parse($"{encName}")))
+                        foreach (IFileSystem fs in fsdst)
                         {
-                            byte[] cipher = AESWrapper.EncryptToByte(buffer, key, 0, bytesRead);
-                            s.Write(cipher);
+                            using (Stream s = fs.CreateFile(FileSystemPath.Parse($"{encName}")))
+                            {
+                                byte[] cipher = AESWrapper.EncryptToByte(buffer, key, 0, bytesRead);
+                                s.Write(cipher);
+                            }
+
+                            string blockInsertSQL =
+                                "INSERT INTO blocks (hash1, size, name, location, hash2) VALUES (@hash1, @size, @name, @location, @hash2)";
+
+                            db.ExecuteNonQuery(blockInsertSQL, new Dictionary<string, object>()
+                            {
+                                {"@hash1", hash1},
+                                {"@size", bytesRead},
+                                {"@name", encName},
+                                {"@location", fs.ToString()},
+                                {"@hash2", hash2}
+                            });
+
+                            hash2Check = db.ExecuteScalar(
+                                "SELECT id FROM blocks WHERE hash2 = @hash2 and hash1 = @hash1 and location = @location",
+                                new Dictionary<string, object>()
+                                {
+                                    {"@hash2", hash2},
+                                    {"@hash1", hash1},
+                                    {"@location", fs.ToString()}
+                                });
+                            id = hash2Check;
+                            
+                            string fileBlockInsertSQL =
+                                "INSERT INTO fileblocks (file_id, block_id, block_order) VALUES (@fileId, @blockId, @blockOrder)";
+                            db.ExecuteNonQuery(fileBlockInsertSQL, new Dictionary<string, object>()
+                            {
+                                {"@fileId", fileId},
+                                {"@blockId", id},
+                                {"@blockOrder", blockCount}
+                            });
+
                         }
 
-                        string blockInsertSQL =
-                            "INSERT INTO blocks (hash1, size, name, location, hash2) VALUES (@hash1, @size, @name, @location, @hash2)";
-
-                        db.ExecuteNonQuery(blockInsertSQL, new Dictionary<string, object>()
-                        {
-                            {"@hash1", hash1},
-                            {"@size", bytesRead},
-                            {"@name", encName},
-                            {"@location", fsdst.ToString()},
-                            {"@hash2", hash2}
-                        });
-
-                        hash2Check = db.ExecuteScalar("SELECT id FROM blocks WHERE hash2 = @hash2 and hash1 = @hash1",
-                            new Dictionary<string, object>()
-                            {
-                                {"@hash2", hash2},
-                                {"@hash1", hash1}
-                            });
-                        id = hash2Check;
-
+                        
                     }
-
-                    string fileBlockInsertSQL =
-                        "INSERT INTO fileblocks (file_id, block_id, block_order) VALUES (@fileId, @blockId, @blockOrder)";
-                    db.ExecuteNonQuery(fileBlockInsertSQL, new Dictionary<string, object>()
-                    {
-                        {"@fileId", fileId},
-                        {"@blockId", id},
-                        {"@blockOrder", blockCount}
-                    });
 
                     blockCount++;
                 }

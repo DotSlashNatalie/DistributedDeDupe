@@ -9,7 +9,8 @@ namespace DistributedDeDupe
 {
     public class DeDupeFileSystem : IFileSystem
     {
-        Dictionary<string, IFileSystem> _fileSystems = new Dictionary<string, IFileSystem>();
+        //Dictionary<string, IFileSystem> _fileSystems = new Dictionary<string, IFileSystem>();
+        List<IFileSystem> _fileSystems = new List<IFileSystem>();
         protected SQLiteDatabase db;
         protected string key;
         protected DeDupeTempFile tmpfile;
@@ -27,7 +28,8 @@ namespace DistributedDeDupe
 
         public void AddFileSystem(IFileSystem fs)
         {
-            _fileSystems[fs.ToString()] = fs;
+            //_fileSystems[fs.ToString()] = fs;
+            _fileSystems.Add(fs);
         }
         
         public void Dispose()
@@ -141,13 +143,13 @@ namespace DistributedDeDupe
         
         public Stream CreateFile(FileSystemPath path)
         {
-            tmpfile = new DeDupeTempFile(_fileSystems["GDRIVE"], path, db, key);
+            tmpfile = new DeDupeTempFile(_fileSystems, path, db, key);
             return new FileStream(tmpfile.Path, FileMode.Open, FileAccess.Write);
         }
 
         public Stream OpenFile(FileSystemPath path, FileAccess access)
         {
-            tmpfile = new DeDupeTempFile(_fileSystems["GDRIVE"], path, db, key);
+            tmpfile = new DeDupeTempFile(_fileSystems, path, db, key);
             tmpfile.Download();
             return new FileStream(tmpfile.Path, FileMode.Open, FileAccess.Read);
         }

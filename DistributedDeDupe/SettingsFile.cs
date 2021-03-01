@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Xml;
 using System.Xml.Serialization;
@@ -12,6 +13,7 @@ namespace DistributedDeDupe
         public int iterations = 10000;
         public string salt; //base64
         public int keySize = 256;
+        public SerializableDictionary<string, string> locations = new SerializableDictionary<string, string>();
     }
 
     public class Settings

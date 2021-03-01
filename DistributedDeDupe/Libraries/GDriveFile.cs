@@ -1,18 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using Google.Apis.Drive.v3;
 using Google.Apis.Upload;
+using SharpFileSystem.IO;
 using File = Google.Apis.Drive.v3.Data.File;
 
 public class GDriveFile
 {
-    protected Stream s;
-    protected bool showProgress;
+    protected MemoryStream _stream = new MemoryStream();
     protected string fileName;
     protected string mimeType;
     protected string directoryID;
-    protected ProgressBar pb;
     protected SQLiteDatabase db;
 
     public enum Operation
@@ -23,57 +23,51 @@ public class GDriveFile
     };
 
     protected Operation op;
-    public GDriveFile(Stream s, string filename, string mimetype, string directoryID, SQLiteDatabase db, Operation p, bool showProgress = true)
+    public GDriveFile(Stream s, string filename, string mimetype, string directoryID, SQLiteDatabase db, Operation p)
     {
-        this.s = s;
-        this.showProgress = showProgress;
+        // Since this is async it is possible that the underlying stream is disposed before we get a chance to
+        // upload to gdrive
+        // So lets copy to a memorystream and not worry about it
+        s.Position = 0;
+        byte[] tmp = s.ReadAllBytes();
+        _stream.Write(tmp);
         this.fileName = filename;
         this.mimeType = mimetype;
         this.directoryID = directoryID;
         this.db = db;
-        this.op = op;
+        this.op = p;
 
     }
 
-    public void Upload(DriveService svc)
+    public async void Upload(DriveService svc)
     {
         Google.Apis.Drive.v3.Data.File body = new File();
         body.Name = fileName;
         body.MimeType = mimeType;
         body.Parents = new List<string>();
         body.Parents.Add(directoryID);
-        FilesResource.CreateMediaUpload req = svc.Files.Create(body, s, mimeType);
+        FilesResource.CreateMediaUpload req = svc.Files.Create(body, _stream, mimeType);
         req.Fields = "id, parents";
         req.ResponseReceived += ReqOnResponseReceived;
-        if (showProgress)
-        {
-            pb = new ProgressBar();
-            req.ProgressChanged += ReqOnProgressChanged;
-        }
 
-        req.Upload();
+        var result = await req.UploadAsync();
+
 
     }
 
-    public void Update(DriveService svc, string fileId)
+    public async void Update(DriveService svc, string fileId)
     {
         File uploadFile = new File();
         uploadFile.Name = fileName;
         uploadFile.MimeType = mimeType;
-        var res = svc.Files.Update(uploadFile, fileId, s, mimeType);
+        var res = svc.Files.Update(uploadFile, fileId, _stream, mimeType);
         res.ResponseReceived += ReqOnResponseReceived;
-        if (showProgress)
-        {
-            pb = new ProgressBar();
-            res.ProgressChanged += ReqOnProgressChanged;
-        }
-        var req = res.Upload();
+        await res.UploadAsync();
         
     }
 
     private void ReqOnResponseReceived(File obj)
     {
-        pb?.Dispose();
 
         switch (op)
         {
@@ -100,10 +94,5 @@ public class GDriveFile
                 break;
         }
 
-    }
-
-    private void ReqOnProgressChanged(IUploadProgress obj)
-    {
-        pb.Report((((double)obj.BytesSent)/s.Length));
     }
 }
