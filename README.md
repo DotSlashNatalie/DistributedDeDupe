@@ -8,7 +8,22 @@ This is a program that is used to distribute data across multiple storage system
 
 # Install
 
-Currently this works with google drive.
+~~Currently this works with google drive.~~
+
+Google drive support has been shelved. It appears that the official library may not be that good - at least for uploading small files. Debugging their library is not that easy so I would need to write my own.
+
+This latest version will work with local storage systems. To set it up:
+
+```
+addstorage [location] [name]
+ie
+addstorage ./storage1 storage1
+```
+
+If you add multiple storage locations the backend will automatically mirror all chunks to each location. This is to satisfy the automatic healing goal.
+Also if a storage system "goes away" the system will automatically attempt to try to pull the chunks it needs from other sources.
+
+
 
 You will need to create an application with Google APIs to use this.
 

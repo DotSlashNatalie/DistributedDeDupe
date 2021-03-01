@@ -106,7 +106,7 @@ namespace DistributedDeDupe
         public void ShowHelp()
         {
             Console.WriteLine("DistributedDeDupe - program to deduplicate and encrypt files in cloud storage");
-            Console.WriteLine("Version: 0.2b");
+            Console.WriteLine("Version: 0.3b");
             Console.WriteLine("Commands:");
             Console.WriteLine("ls - directory listing");
             Console.WriteLine("ll - long directory listing (includes hash)");
