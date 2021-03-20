@@ -36,7 +36,7 @@ public class VirtualDirectoryListing
         string ret = String.Format(formatStringTop, fsinfo.Count);
         foreach (VirtualFileSystemInfo fs in fsinfo)
         {
-            if (fs.Path.IsDirectory)
+            if (fs.IsDirectory)
             {
                 ret += String.Format(formatListingDirectory, 0, fs.LastWriteTime.ToString(dateFormat), fs.Name);
             }

@@ -16,10 +16,9 @@ namespace DistributedDeDupe
         {
             _encfile = encFile;
             this._key = key;
-            AESWrapper.DecryptFileToFile(encFile, Path, key);
+            if (System.IO.File.Exists(encFile))
+                AESWrapper.DecryptFileToFile(encFile, Path, key);
         }
-        
-        
 
         public EncryptedTempFile(string encFile, string key) : base()
         {
@@ -28,7 +27,7 @@ namespace DistributedDeDupe
             if (System.IO.File.Exists(encFile))
                 AESWrapper.DecryptFileToFile(encFile, Path, key);
         }
-
+        
         public void Flush()
         {
             AESWrapper.EncryptFileToFile(Path, _encfile, _key);

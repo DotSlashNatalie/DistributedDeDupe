@@ -37,6 +37,18 @@
       <None Update="Test Files\kitty.txt">
         <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       </None>
+      <None Update="migrations\sqlite\7.sql">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </None>
+    </ItemGroup>
+
+    <ItemGroup>
+      <Reference Include="Tmds.Fuse, Version=0.1.0.0, Culture=neutral, PublicKeyToken=null">
+        <HintPath>..\libs\Tmds.Fuse.dll</HintPath>
+      </Reference>
+      <Reference Include="Tmds.LibC, Version=0.3.0.0, Culture=neutral, PublicKeyToken=null">
+        <HintPath>..\libs\Tmds.LibC.dll</HintPath>
+      </Reference>
     </ItemGroup>
 
 </Project>

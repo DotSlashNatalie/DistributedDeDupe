@@ -18,11 +18,14 @@ public class DeDupeTempFile : TempFile
     protected FileSystemPath vsrc;
     protected SQLiteDatabase db;
     protected string key;
+    protected readonly string DATAFILE = "data.dedupe";
+    protected bool disableProgress;
 
     // fsdst will be the dest file system - in this case google drive
     // vsrc will be the virtual file that we want to store - ie /test/test.txt
-    public DeDupeTempFile(List<IFileSystem> fsdst, FileSystemPath vsrc, SQLiteDatabase db, string key)
+    public DeDupeTempFile(List<IFileSystem> fsdst, FileSystemPath vsrc, SQLiteDatabase db, string key, bool disableProgress = false)
     {
+        this.disableProgress = disableProgress;
         this.fsdst = fsdst;
         this.vsrc = vsrc;
         this.db = db;
@@ -62,7 +65,7 @@ public class DeDupeTempFile : TempFile
 
                 continueSearch = false;
             }
-            catch (Exception e)
+            catch (Exception)
             {
                 Console.WriteLine("[Error]: file system - " + fsdst[fsToUse].ToString() + " missing - trying a backup");
                 continueSearch = true;
@@ -83,7 +86,7 @@ public class DeDupeTempFile : TempFile
             {"@fileid", fileInfo.Rows[0]["id"]},
             {"@location", fsdst[fsToUse].ToString()}
         });
-        using (ProgressBar pb = new ProgressBar())
+        using (ProgressBar pb = new ProgressBar(disableProgress))
         {
             Int64 rowCount = 0;
             foreach (DataRow r in blocks.Rows)
@@ -102,9 +105,68 @@ public class DeDupeTempFile : TempFile
                 string remotename = r["name"].ToString();
                 remotename = "/" + remotename;
                 remotename = remotename.Replace("//", "/");
-                
 
-                using (Stream s = fsdst[fsToUse].OpenFile(FileSystemPath.Parse(remotename), FileAccess.Read))
+                
+                using (var fstream = fsdst[fsToUse].OpenFile(FileSystemPath.Parse($"/{DATAFILE}"), FileAccess.Read))
+                {
+                    DeDupeStorage storage = new DeDupeStorage(fstream, db);
+                    byte[] buffer = storage.GetFile(remotename);
+                    byte[] plainText = AESWrapper.DecryptToByte(buffer, key);
+                    using (FileStream f = System.IO.File.Open(this.Path, FileMode.Append, FileAccess.Write))
+                    {
+                        f.Write(plainText);
+                    }
+                }
+                
+                /*using (var fstream = fsdst[fsToUse].OpenFile(FileSystemPath.Parse($"/{DATAFILE}"), FileAccess.Read))
+                {
+                    DeDupeStorage storage = new DeDupeStorage(fstream, db);
+                    byte[] buffer = storage.GetFile(remotename);
+                    byte[] plainText = AESWrapper.DecryptToByte(buffer, key);
+                    using (var zippedStream = new MemoryStream(plainText))
+                    {
+                        using (var archive = new ZipArchive(zippedStream, ZipArchiveMode.Read))
+                        {
+                            var ent = archive.GetEntry("data.bin");
+                            using (var zipent = ent.Open())
+                            {
+                                byte[] bufferinner = zipent.ReadAllBytes();
+                                using (FileStream f = System.IO.File.Open(this.Path, FileMode.Append, FileAccess.Write))
+                                {
+                                    f.Write(bufferinner);
+                                }
+                                //fstream.Write(bufferinner);
+                            }
+                        }
+                    }
+                }*/
+
+                /*using (var fstream = fsdst[fsToUse].OpenFile(FileSystemPath.Parse($"/{DATAFILE}"), FileAccess.Read))
+                {
+                    using (var zipfile = new ZipArchive(fstream, ZipArchiveMode.Read))
+                    {
+                        var ent = zipfile.GetEntry(remotename);
+                        using (var zipent = ent.Open())
+                        {
+                            byte[] buffer = zipent.ReadAllBytes();
+                            byte[] plainText = AESWrapper.DecryptToByte(buffer, key);
+                            
+                            if (plainText == null)
+                            {
+                                throw new Exception("[Error]: Could not decrypt file");
+                            }
+
+                            using (FileStream f = System.IO.File.Open(this.Path, FileMode.Append, FileAccess.Write))
+                            {
+                                f.Write(plainText);
+                            }
+                        }
+                    }
+                }*/
+                
+                
+                
+                /*using (Stream s = fsdst[fsToUse].OpenFile(FileSystemPath.Parse(remotename), FileAccess.Read))
                 {
                     
                     using (FileStream f = System.IO.File.Open(this.Path, FileMode.Append, FileAccess.Write))
@@ -118,7 +180,7 @@ public class DeDupeTempFile : TempFile
 
                         f.Write(plainText);
                     }
-                }
+                }*/
             }
             string fileHash = fileInfo.Rows[0]["filehash"].ToString();
             if (fileHash != "")
@@ -140,7 +202,7 @@ public class DeDupeTempFile : TempFile
 
     public void Flush()
     {
-        byte[] buffer = new byte[128];
+        byte[] buffer = new byte[4096];
         int bytesRead = 0;
         int blockCount = 0;
         string fileId = "";
@@ -195,7 +257,7 @@ public class DeDupeTempFile : TempFile
         {
             Int64 lenthOfFile = f.Length;
             Int64 totalRead = 0;
-            using (ProgressBar pb = new ProgressBar())
+            using (ProgressBar pb = new ProgressBar(disableProgress))
             {
                 while ((bytesRead = f.Read(buffer, 0, buffer.Length)) > 0)
                 {
@@ -205,30 +267,16 @@ public class DeDupeTempFile : TempFile
                     string id = "";
                     string hash2 = "";
                     string hash2Check = "";
-                    string hash1Check = db.ExecuteScalar("SELECT id FROM blocks WHERE hash1 = @hash1",
+                    hash2 = buffer.GetSHA512(0, bytesRead);
+                    
+                    hash2Check = db.ExecuteScalar("SELECT id FROM blocks WHERE hash2 = @hash2 and hash1 = @hash1",
                         new Dictionary<string, object>()
                         {
+                            {"@hash2", hash2},
                             {"@hash1", hash1}
                         });
-                    /*using (SHA256 sha256 = SHA256.Create())
-                    {
-                        byte[] hash = sha256.ComputeHash(buffer, 0, bytesRead);
-                        hash2 = Convert.ToHexString(hash).ToLower();
-                    }*/
-
-                    hash2 = buffer.GetSHA512(0, bytesRead);
-                    if (hash1Check != "")
-                    {
-
-
-                        hash2Check = db.ExecuteScalar("SELECT id FROM blocks WHERE hash2 = @hash2 and hash1 = @hash1",
-                            new Dictionary<string, object>()
-                            {
-                                {"@hash2", hash2},
-                                {"@hash1", hash1}
-                            });
-                        id = hash2Check;
-                    }
+                    id = hash2Check;
+                    
 
                     if (id == "")
                     {
@@ -254,13 +302,77 @@ public class DeDupeTempFile : TempFile
                             }
                         }*/
 
+
+                        
+
                         foreach (IFileSystem fs in fsdst)
                         {
-                            using (Stream s = fs.CreateFile(FileSystemPath.Parse($"{encName}")))
+                            /*try
+                            {
+                                using (Stream s = fs.CreateFile(FileSystemPath.Parse("/test")))
+                                {
+
+                                }
+                            }
+                            catch (Exception e)
+                            {
+                                Console.WriteLine("[Error]: file system - " + fs.ToString() + " is unreachable.");
+                                continue;
+                            }*/
+                            //fs.
+                            
+                            using (var fstream = fs.OpenOrCreate(FileSystemPath.Parse($"/{DATAFILE}"),
+                                FileAccess.ReadWrite))
+                            {
+                                //byte[] cipher = AESWrapper.EncryptToByte(buffer, key, 0, bytesRead);
+                                DeDupeStorage storage = new DeDupeStorage(fstream, db);
+
+                                byte[] cipher = AESWrapper.EncryptToByte(buffer, key, 0, bytesRead);
+                                storage.AddFile(encName, cipher);
+                                    
+                            }
+
+                            /*using (var fstream = fs.OpenOrCreate(FileSystemPath.Parse($"/{DATAFILE}"),
+                                FileAccess.ReadWrite))
+                            {
+                                //byte[] cipher = AESWrapper.EncryptToByte(buffer, key, 0, bytesRead);
+                                DeDupeStorage storage = new DeDupeStorage(fstream, db);
+                                using (var zippedStream = new MemoryStream())
+                                {
+                                    using (var archive = new ZipArchive(zippedStream, ZipArchiveMode.Update))
+                                    {
+                                        var ent = archive.CreateEntry("data.bin", CompressionLevel.Optimal);
+                                        using (var zipent = ent.Open())
+                                        {
+                                            zipent.Write(buffer, 0, bytesRead);
+                                        }
+                                    }
+
+                                    byte[] zipData = zippedStream.ToArray();
+                                    byte[] cipher = AESWrapper.EncryptToByte(zipData, key, 0, zipData.Length);
+                                    storage.AddFile(encName, cipher);
+                                    
+                                }
+                            }*/
+
+                            /*using (var fstream = fs.OpenOrCreate(FileSystemPath.Parse($"/{DATAFILE}"), FileAccess.ReadWrite))
+                            {
+                                using (var zip = new ZipArchive(fstream, ZipArchiveMode.Update))
+                                {
+                                    var ent = zip.CreateEntry(encName, CompressionLevel.Optimal);
+                                    using (var entfs = ent.Open())
+                                    {
+                                        byte[] cipher = AESWrapper.EncryptToByte(buffer, key, 0, bytesRead);
+                                        entfs.Write(cipher);
+                                    }
+                                }
+                            }*/
+                            
+                            /*using (Stream s = fs.CreateFile(FileSystemPath.Parse($"{encName}")))
                             {
                                 byte[] cipher = AESWrapper.EncryptToByte(buffer, key, 0, bytesRead);
                                 s.Write(cipher);
-                            }
+                            }*/
 
                             string blockInsertSQL =
                                 "INSERT INTO blocks (hash1, size, name, location, hash2) VALUES (@hash1, @size, @name, @location, @hash2)";
@@ -283,7 +395,7 @@ public class DeDupeTempFile : TempFile
                                     {"@location", fs.ToString()}
                                 });
                             id = hash2Check;
-                            
+
                             string fileBlockInsertSQL =
                                 "INSERT INTO fileblocks (file_id, block_id, block_order) VALUES (@fileId, @blockId, @blockOrder)";
                             db.ExecuteNonQuery(fileBlockInsertSQL, new Dictionary<string, object>()
@@ -292,10 +404,21 @@ public class DeDupeTempFile : TempFile
                                 {"@blockId", id},
                                 {"@blockOrder", blockCount}
                             });
-
                         }
+                    
 
-                        
+
+                    }
+                    else
+                    {
+                        string fileBlockInsertSQL =
+                            "INSERT INTO fileblocks (file_id, block_id, block_order) VALUES (@fileId, @blockId, @blockOrder)";
+                        db.ExecuteNonQuery(fileBlockInsertSQL, new Dictionary<string, object>()
+                        {
+                            {"@fileId", fileId},
+                            {"@blockId", id},
+                            {"@blockOrder", blockCount}
+                        });
                     }
 
                     blockCount++;

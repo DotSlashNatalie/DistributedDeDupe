@@ -19,15 +19,22 @@ public class ProgressBar : IDisposable, IProgress<double> {
 	private string currentText = string.Empty;
 	private bool disposed = false;
 	private int animationIndex = 0;
+	private bool disable = false;
 
-	public ProgressBar() {
-		timer = new Timer(TimerHandler);
+	public ProgressBar(bool disable = false)
+	{
+		this.disable = disable;
+		if (!disable)
+		{
+			timer = new Timer(TimerHandler);
 
-		// A progress bar is only for temporary display in a console window.
-		// If the console output is redirected to a file, draw nothing.
-		// Otherwise, we'll end up with a lot of garbage in the target file.
-		if (!Console.IsOutputRedirected) {
-			ResetTimer();
+			// A progress bar is only for temporary display in a console window.
+			// If the console output is redirected to a file, draw nothing.
+			// Otherwise, we'll end up with a lot of garbage in the target file.
+			if (!Console.IsOutputRedirected)
+			{
+				ResetTimer();
+			}
 		}
 	}
 
@@ -84,9 +91,13 @@ public class ProgressBar : IDisposable, IProgress<double> {
 	}
 
 	public void Dispose() {
-		lock (timer) {
-			disposed = true;
-			UpdateText(string.Empty);
+		if (!disable)
+		{
+			lock (timer)
+			{
+				disposed = true;
+				UpdateText(string.Empty);
+			}
 		}
 	}
 

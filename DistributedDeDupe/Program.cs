@@ -2,17 +2,22 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 using Google.Apis.Drive.v3;
 using SharpFileSystem;
 using SharpFileSystem.IO;
 using File = System.IO.File;
+using SharpFileSystem.FileSystems;
+using Tmds.Fuse;
 
 namespace DistributedDeDupe
 {
     class Prompt
     {
-        private DeDupeFileSystem fs;
+        //private DeDupeFileSystem fs;
 
         
         private void setUpDatabase(SQLiteDatabase db)
@@ -24,7 +29,7 @@ namespace DistributedDeDupe
             db.ExecuteNonQuery("INSERT INTO settings (`key`, `value`) VALUES (@setting, @value)", new Dictionary<string, object>()
             {
                 {"@setting", "version"},
-                {"@value", "1.0"}
+                {"@value", "0.3b"}
             });
             //db.ExecuteNonQuery("INSERT INTO settings (`key`, `value`) VALUES ('migration', '1')");
             db.ExecuteNonQuery("INSERT INTO settings (`key`, `value`) VALUES (@setting, @value)",new Dictionary<string, object>()
@@ -126,6 +131,7 @@ namespace DistributedDeDupe
             Console.WriteLine("remotecat [file] - downloads a remote file and attempts to decrypt a file with the key in memory and output to console");
             Console.WriteLine("decryptdb [file] - this decrypts the db for manual inspection");
             Console.WriteLine("addstorage [location] [name] - this adds a mounted physical location");
+            Console.WriteLine("fuse [location] - mounts a virtual file system at the specified location");
         }
         public SettingsData GenerateSettings()
         {
@@ -163,8 +169,8 @@ namespace DistributedDeDupe
 
         public void Run()
         {
-            string input = "";
-            FileSystemPath currentDirectory = FileSystemPath.Parse("/");
+            string[] arguments = Environment.GetCommandLineArgs();
+            string key;
             SettingsData data;
             if (File.Exists("settings.xml"))
             {
@@ -177,192 +183,268 @@ namespace DistributedDeDupe
                 SettingsFile.Write(data, "settings.xml");
             }
 
-            string[] Scopes = { DriveService.Scope.Drive,DriveService.Scope.DriveFile };
-            string key = AESWrapper.GenerateKeyString(ConsoleEx.Password("Key: "), data.salt, data.iterations,
-                data.keySize);
-
-            using (EncryptedTempFile dbfile = new EncryptedTempFile("data.sqlite.enc", key))
+            if (arguments.Length > 1 && arguments[1] == "fuse")
             {
-                SQLiteDatabase db = new SQLiteDatabase(dbfile.Path);
-                var res = db.GetDataTable("PRAGMA table_info(settings)");
-                if (res.Rows.Count == 0)
+                try
                 {
-                    this.setUpDatabase(db);
-                }
-                this.runMigrations(db);
-                dbfile.Flush();
-                //GDriveFileSystem gdrive = new GDriveFileSystem(Scopes, "DistrubtedDeDupe", dbfile.Path);
-                Log.Instance.Write("log.txt");
-
-                
-                DeDupeFileSystem fs = new DeDupeFileSystem(dbfile.Path, key);
-                foreach (KeyValuePair<string, string> kv in data.locations)
-                {
-                    fs.AddFileSystem(new DeDupeLocalFileSystem(kv.Value, kv.Key));
-                }
-                //fs.AddFileSystem(gdrive);
-                string fileName;
-                byte[] fileData;
-                do
-                {
-                    if (currentDirectory.Path == "/")
-                        Console.Write($"#:{currentDirectory.Path}> ");
-                    else
-                        Console.Write($"#:{currentDirectory.Path.TrimEnd('/')}> ");
-                    input = Console.ReadLine();
-                    switch (input.Split(" ")[0])
+                    Fuse.LazyUnmount(arguments[2]);
+                    key = AESWrapper.GenerateKeyString(ConsoleEx.Password("Key: "), data.salt, data.iterations,
+                        data.keySize);
+                    using (var mount = Fuse.Mount(arguments[2], new DeDupeFuseFileSystem(key, data)))
                     {
-                        case "addstorage":
-                            string location = input.Split(" ")[1].Trim();
-                            string name = input.Split(" ")[2].Trim();
-                            data.locations[name] = Path.GetFullPath(location);
-                            fs.AddFileSystem(new DeDupeLocalFileSystem(Path.GetFullPath(location), name));
-                            SettingsFile.Write(data, "settings.xml");
-                            break;
-                        case "decryptdb":
-                            fileName = input.Split(" ")[1].Trim();
-                            //byte[] plain = AESWrapper.DecryptToByte(System.IO.File.ReadAllBytes(dbfile.Path), key);
-                            System.IO.File.WriteAllBytes(fileName, System.IO.File.ReadAllBytes(dbfile.Path));
-                            break;
-                        case "help":
-                            ShowHelp();
-                            break;
-                        case "changekey":
-                            key = AESWrapper.GenerateKeyString(ConsoleEx.Password("Key: "), data.salt, data.iterations,
-                                data.keySize);
-                            fs.UpdateKey(key);
-                            break;
-                        case "generate":
-                            data = GenerateSettings();
-                            if (data != null)
-                            {
+                        Task t = mount.WaitForUnmountAsync();
+                        t.Wait();
+
+                    }
+                }
+                catch (FuseException fe)
+                {
+                    Console.WriteLine($"Fuse throw an exception: {fe}");
+
+                    Console.WriteLine("Try unmounting the file system by executing:");
+                    Console.WriteLine($"fuser -kM {arguments[2]}");
+                    Console.WriteLine($"sudo umount -f {arguments[2]}");
+                }
+            }
+            else
+            {
+                string input = "";
+                FileSystemPath currentDirectory = FileSystemPath.Parse("/");
+
+
+                string[] Scopes = {DriveService.Scope.Drive, DriveService.Scope.DriveFile};
+
+
+                if (arguments.Length > 1)
+                {
+                    key = AESWrapper.GenerateKeyString(arguments[1], data.salt, data.iterations,
+                        data.keySize);
+                }
+                else
+                {
+
+                    key = AESWrapper.GenerateKeyString(ConsoleEx.Password("Key: "), data.salt, data.iterations,
+                        data.keySize);
+                }
+
+                using (EncryptedTempFile dbfile = new EncryptedTempFile("data.sqlite.enc", key))
+                {
+                    SQLiteDatabase db = new SQLiteDatabase(dbfile.Path);
+                    var res = db.GetDataTable("PRAGMA table_info(settings)");
+                    if (res.Rows.Count == 0)
+                    {
+                        this.setUpDatabase(db);
+                    }
+
+                    this.runMigrations(db);
+                    dbfile.Flush();
+                    //GDriveFileSystem gdrive = new GDriveFileSystem(Scopes, "DistrubtedDeDupe", dbfile.Path);
+                    Log.Instance.Write("log.txt");
+
+
+                    DeDupeFileSystem fs = new DeDupeFileSystem(dbfile.Path, key);
+                    foreach (KeyValuePair<string, string> kv in data.locations)
+                    {
+                        fs.AddFileSystem(new DeDupeLocalFileSystem(kv.Value, kv.Key));
+                    }
+
+                    //fs.AddFileSystem(gdrive);
+                    string fileName;
+                    byte[] fileData;
+                    do
+                    {
+                        if (currentDirectory.Path == "/")
+                            Console.Write($"#:{currentDirectory.Path}> ");
+                        else
+                            Console.Write($"#:{currentDirectory.Path.TrimEnd('/')}> ");
+
+                        if (arguments.Length > 1)
+                        {
+                            input = arguments[2];
+                        }
+                        else
+                        {
+                            input = Console.ReadLine();
+                        }
+
+                        switch (input.Split(" ")[0])
+                        {
+                            case "stats":
+                                long entitySpaceUsed = long.Parse(db.ExecuteScalar("SELECT SUM(size) FROM entities"));
+                                long blockSpaceUsed = long.Parse(db.ExecuteScalar("SELECT SUM(size) FROM blocks"));
+                                long chunks = long.Parse(db.ExecuteScalar("SELECT count(id) from blocks"));
+                                long diffSpace = entitySpaceUsed - blockSpaceUsed;
+                                Console.WriteLine($"Space used for entites => {entitySpaceUsed.GetBytesReadable()}");
+                                Console.WriteLine($"Space used for blocks => {blockSpaceUsed.GetBytesReadable()}");
+                                Console.WriteLine($"Space saved => {diffSpace.GetBytesReadable()}");
+                                Console.WriteLine($"Blocks used => {chunks}");
+                                break;
+                            case "addstorage":
+                                string location = input.Split(" ")[1].Trim();
+                                string name = input.Split(" ")[2].Trim();
+                                data.locations[name] = Path.GetFullPath(location);
+                                fs.AddFileSystem(new DeDupeLocalFileSystem(Path.GetFullPath(location), name));
                                 SettingsFile.Write(data, "settings.xml");
+                                break;
+                            case "decryptdb":
+                                fileName = input.Split(" ")[1].Trim();
+                                //byte[] plain = AESWrapper.DecryptToByte(System.IO.File.ReadAllBytes(dbfile.Path), key);
+                                System.IO.File.WriteAllBytes(fileName, System.IO.File.ReadAllBytes(dbfile.Path));
+                                break;
+                            case "help":
+                                ShowHelp();
+                                break;
+                            case "changekey":
                                 key = AESWrapper.GenerateKeyString(ConsoleEx.Password("Key: "), data.salt,
                                     data.iterations,
                                     data.keySize);
                                 fs.UpdateKey(key);
-                            }
+                                break;
+                            case "generate":
+                                data = GenerateSettings();
+                                if (data != null)
+                                {
+                                    SettingsFile.Write(data, "settings.xml");
+                                    key = AESWrapper.GenerateKeyString(ConsoleEx.Password("Key: "), data.salt,
+                                        data.iterations,
+                                        data.keySize);
+                                    fs.UpdateKey(key);
+                                }
 
-                            break;
-                        case "showsettings":
-                            Console.WriteLine($"Iterations = {data.iterations}");
-                            Console.WriteLine($"Salt = {data.salt}");
-                            Console.WriteLine($"Key size = {data.keySize}");
-                            foreach (var kv in data.locations)
-                            {
-                                Console.WriteLine($"{kv.Key} = {kv.Value}");
-                            }
-                            break;
-                        case "ls":
-                            Console.WriteLine(VirtualDirectoryListing.List(fs.GetExtendedEntities(currentDirectory)));
-                            break;
-                        case "ll":
-                            Console.WriteLine(
-                                VirtualDirectoryListing.ListWithHash(fs.GetExtendedEntities(currentDirectory)));
-                            break;
-                        case "put":
-                            if (data.locations.Count == 0)
-                            {
-                                Console.WriteLine("[Error]: No file locations setup");
                                 break;
-                            }
-                            fileName = input.Split(" ")[1].Trim();
-                            byte[] fileDataPut = System.IO.File.ReadAllBytes(fileName);
-                            //string encFile = AESWrapper.EncryptToString(fileData, key);
-                            Stopwatch watch1 = new Stopwatch(); 
-                            watch1.Start();
-                            using (Stream f = fs.CreateFile(FileSystemPath.Parse(currentDirectory.Path + fileName)))
-                            {
-                                f.Write(fileDataPut, 0, fileDataPut.Length);
-                            }
-                            fs.FlushTempFile();
-                            dbfile.Flush();
-                            watch1.Stop();
-                            Console.WriteLine($"Elapsed time: {watch1.Elapsed.ToString("g")}");
-                            break;
-                        case "localcat":
-                            if (data.locations.Count == 0)
-                            {
-                                Console.WriteLine("[Error]: No file locations setup");
+                            case "showsettings":
+                                Console.WriteLine($"Iterations = {data.iterations}");
+                                Console.WriteLine($"Salt = {data.salt}");
+                                Console.WriteLine($"Key size = {data.keySize}");
+                                foreach (var kv in data.locations)
+                                {
+                                    Console.WriteLine($"{kv.Key} = {kv.Value}");
+                                }
+
                                 break;
-                            }
-                            fileName = input.Split(" ")[1].Trim();
-                            fileData = System.IO.File.ReadAllBytes(fileName);
-                            Console.WriteLine(AESWrapper.DecryptToString(fileData, key));
-                            break;
-                        case "remotecat":
-                            if (data.locations.Count == 0)
-                            {
-                                Console.WriteLine("[Error]: No file locations setup");
+                            case "ls":
+                                Console.WriteLine(
+                                    VirtualDirectoryListing.List(fs.GetExtendedEntities(currentDirectory)));
                                 break;
-                            }
-                            fileName = input.Split(" ")[1].Trim();
-                            try
-                            {
+                            case "ll":
+                                Console.WriteLine(
+                                    VirtualDirectoryListing.ListWithHash(fs.GetExtendedEntities(currentDirectory)));
+                                break;
+                            case "put":
+                                if (data.locations.Count == 0)
+                                {
+                                    Console.WriteLine("[Error]: No file locations setup");
+                                    break;
+                                }
+
+                                fileName = input.Split(" ")[1].Trim();
+                                byte[] fileDataPut = System.IO.File.ReadAllBytes(fileName);
+                                //string encFile = AESWrapper.EncryptToString(fileData, key);
+                                Stopwatch watch1 = new Stopwatch();
+                                watch1.Start();
+                                using (Stream f = fs.CreateFile(FileSystemPath.Parse(currentDirectory.Path + fileName)))
+                                {
+                                    f.Write(fileDataPut, 0, fileDataPut.Length);
+                                }
+
+                                fs.FlushTempFile();
+                                dbfile.Flush();
+                                watch1.Stop();
+                                Console.WriteLine($"Elapsed time: {watch1.Elapsed.ToString("g")}");
+                                break;
+                            case "localcat":
+                                if (data.locations.Count == 0)
+                                {
+                                    Console.WriteLine("[Error]: No file locations setup");
+                                    break;
+                                }
+
+                                fileName = input.Split(" ")[1].Trim();
+                                fileData = System.IO.File.ReadAllBytes(fileName);
+                                Console.WriteLine(AESWrapper.DecryptToString(fileData, key));
+                                break;
+                            case "remotecat":
+                                if (data.locations.Count == 0)
+                                {
+                                    Console.WriteLine("[Error]: No file locations setup");
+                                    break;
+                                }
+
+                                fileName = input.Split(" ")[1].Trim();
+                                try
+                                {
+                                    using (Stream f = fs.OpenFile(
+                                        FileSystemPath.Parse(currentDirectory.Path + fileName),
+                                        FileAccess.Read))
+                                    {
+                                        Console.WriteLine(f.ReadAllText());
+                                    }
+                                }
+                                catch (Exception e)
+                                {
+                                    Console.WriteLine("[Error]: " + e.ToString());
+                                }
+
+                                break;
+                            case "get":
+                                if (data.locations.Count == 0)
+                                {
+                                    Console.WriteLine("[Error]: No file locations setup");
+                                    break;
+                                }
+
+                                fileName = input.Split(" ")[1].Trim();
+                                string dstFileName = input.Split(" ")[2].Trim();
+                                Stopwatch watch2 = new Stopwatch();
+                                watch2.Start();
                                 using (Stream f = fs.OpenFile(FileSystemPath.Parse(currentDirectory.Path + fileName),
                                     FileAccess.Read))
                                 {
-                                    Console.WriteLine(f.ReadAllText());
+                                    byte[] test = f.ReadAllBytes();
+                                    System.IO.File.WriteAllBytes(dstFileName, test);
                                 }
-                            }
-                            catch (Exception e)
-                            {
-                                Console.WriteLine("[Error]: " + e.ToString());
-                            }
 
-                            break;
-                        case "get":
-                            if (data.locations.Count == 0)
-                            {
-                                Console.WriteLine("[Error]: No file locations setup");
+                                watch2.Stop();
+                                Console.WriteLine($"Elapsed time: {watch2.Elapsed.ToString("g")}");
                                 break;
-                            }
-                            fileName = input.Split(" ")[1].Trim();
-                            string dstFileName = input.Split(" ")[2].Trim();
-                            Stopwatch watch2 = new Stopwatch();
-                            watch2.Start();
-                            using (Stream f = fs.OpenFile(FileSystemPath.Parse(currentDirectory.Path + fileName),
-                                FileAccess.Read))
-                            {
-                                byte[] test = f.ReadAllBytes();
-                                System.IO.File.WriteAllBytes(dstFileName, test);
-                            }
-                            watch2.Stop();
-                            Console.WriteLine($"Elapsed time: {watch2.Elapsed.ToString("g")}");
-                            break;
-                        case "mkdir":
-                            string newDir = input.Split(" ")[1].Trim();
-                            fs.CreateDirectory(currentDirectory.AppendDirectory(newDir));
-                            dbfile.Flush();
-                            break;
-                        case "cd":
-                            string dirtmpStr;
-                            //dirtmp = currentDirectory.AppendDirectory(input.Split(" ")[1]);
-                            dirtmpStr = ParseDotDot(currentDirectory.Path, input.Split(" ")[1]);
-                            FileSystemPath dirtmp;
-                            if (dirtmpStr == "/")
-                            {
-                                dirtmp = FileSystemPath.Parse(dirtmpStr);
-                            }
-                            else
-                            {
-                                dirtmp = FileSystemPath.Parse(dirtmpStr + "/");
-                            }
+                            case "mkdir":
+                                string newDir = input.Split(" ")[1].Trim();
+                                fs.CreateDirectory(currentDirectory.AppendDirectory(newDir));
+                                dbfile.Flush();
+                                break;
+                            case "cd":
+                                string dirtmpStr;
+                                //dirtmp = currentDirectory.AppendDirectory(input.Split(" ")[1]);
+                                dirtmpStr = ParseDotDot(currentDirectory.Path, input.Split(" ")[1]);
+                                FileSystemPath dirtmp;
+                                if (dirtmpStr == "/")
+                                {
+                                    dirtmp = FileSystemPath.Parse(dirtmpStr);
+                                }
+                                else
+                                {
+                                    dirtmp = FileSystemPath.Parse(dirtmpStr + "/");
+                                }
 
-                            if (fs.Exists(dirtmp))
-                            {
-                                //currentDirectory = currentDirectory.AppendDirectory(input.Split(" ")[1]);
-                                currentDirectory = dirtmp;
-                            }
-                            else
-                            {
-                                Console.WriteLine("No such directory exists");
-                            }
+                                if (fs.Exists(dirtmp))
+                                {
+                                    //currentDirectory = currentDirectory.AppendDirectory(input.Split(" ")[1]);
+                                    currentDirectory = dirtmp;
+                                }
+                                else
+                                {
+                                    Console.WriteLine("No such directory exists");
+                                }
 
+                                break;
+                        }
+
+                        if (arguments.Length > 1)
                             break;
-                    }
-                } while (input != "exit" && input != "quit");
-                dbfile.Flush();
+                    } while (input != "exit" && input != "quit");
+
+                    dbfile.Flush();
+                }
             }
         }
     }

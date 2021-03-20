@@ -14,9 +14,11 @@ namespace DistributedDeDupe
         protected SQLiteDatabase db;
         protected string key;
         protected DeDupeTempFile tmpfile;
+        protected bool disableProgress = false;
 
-        public DeDupeFileSystem(string dbfile, string key)
+        public DeDupeFileSystem(string dbfile, string key, bool disableProgress = false)
         {
+            this.disableProgress = disableProgress;
             db = new SQLiteDatabase(dbfile);
             this.key = key;
         }
@@ -128,11 +130,11 @@ namespace DistributedDeDupe
         protected void CreateParentFolder(FileSystemPath folder)
         {
             throw new System.NotImplementedException();
-            string folderID = db.ExecuteScalar("SELECT id FROM directories WHERE fullpath = @path",
+            /*string folderID = db.ExecuteScalar("SELECT id FROM directories WHERE fullpath = @path",
                 new Dictionary<string, object>()
                 {
                     {"@path", folder.ParentPath}
-                });
+                });*/
             
         }
 
@@ -143,13 +145,13 @@ namespace DistributedDeDupe
         
         public Stream CreateFile(FileSystemPath path)
         {
-            tmpfile = new DeDupeTempFile(_fileSystems, path, db, key);
+            tmpfile = new DeDupeTempFile(_fileSystems, path, db, key, disableProgress);
             return new FileStream(tmpfile.Path, FileMode.Open, FileAccess.Write);
         }
 
         public Stream OpenFile(FileSystemPath path, FileAccess access)
         {
-            tmpfile = new DeDupeTempFile(_fileSystems, path, db, key);
+            tmpfile = new DeDupeTempFile(_fileSystems, path, db, key, disableProgress);
             tmpfile.Download();
             return new FileStream(tmpfile.Path, FileMode.Open, FileAccess.Read);
         }
@@ -169,7 +171,7 @@ namespace DistributedDeDupe
             });
             double now = DateTime.Now.UnixTimeStamp();
             string sqlCreateEntity =
-                "INSERT INTO entities (fname, dir, cdate, mdate, isdir, accessdate, size) VALUES (@fname, @dir, @cdate, @mdate, @isdir, @accessdate, size)";
+                "INSERT INTO entities (fname, dir, cdate, mdate, isdir, accessdate, size) VALUES (@fname, @dir, @cdate, @mdate, @isdir, @accessdate, @size)";
             db.ExecuteNonQuery(sqlCreateEntity, new Dictionary<string, object>()
             {
                 {"@fname", path.EntityName},

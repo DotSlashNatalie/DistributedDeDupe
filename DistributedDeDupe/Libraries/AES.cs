@@ -280,6 +280,7 @@ namespace DistributedDeDupe
                 catch (CryptographicException ce)
                 {
                     Console.WriteLine("[Error]: Wrong key or invalid ciphertext");
+                    Console.WriteLine(ce);
                 }
                 catch (Exception e)
                 {
