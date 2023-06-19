@@ -1,9 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
+    
     <PropertyGroup>
-        <TargetFramework>netcoreapp5.0</TargetFramework>
-
+        <TargetFramework>net6.0</TargetFramework>
+        <PublishSingleFile>true</PublishSingleFile>
         <IsPackable>false</IsPackable>
+        <UseAppHost>true</UseAppHost>
+        <SelfContained>true</SelfContained>
+        <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <LangVersion>9</LangVersion>
     </PropertyGroup>
 
     <ItemGroup>
